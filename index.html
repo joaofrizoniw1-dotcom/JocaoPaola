@@ -45,6 +45,7 @@ th{font-size:12px;color:var(--mut);font-weight:600}td.r,th.r{text-align:right}
 .btn.g{background:var(--soft);color:var(--tx)}.btn.d{background:var(--out);color:#fff}
 .tst{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(20px + env(safe-area-inset-bottom,0px));background:var(--tx);color:var(--bg);padding:10px 16px;border-radius:10px;z-index:60;max-width:90%}
 section{display:none}section.on{display:block}
+.btn.o{background:var(--warn);color:#fff}
 
 /* Estilos da Tela de Login */
 #app-content { display: none; }
@@ -96,6 +97,7 @@ section{display:none}section.on{display:block}
     <button data-t="rec" id="nav-rec">A receber</button>
     <button data-t="pag" id="nav-pag">A pagar</button>
     <button data-t="res" id="nav-res">Reserva</button>
+    <button data-t="est" id="nav-est">Estoque</button>
   </nav>
 
   <section id="resumo" class="on">
@@ -228,6 +230,21 @@ section{display:none}section.on{display:block}
     <div class="card"><h2>Histórico da reserva</h2><div class="tw" id="v-l"></div>
       <p style="font-size:12px;color:var(--mut);margin:10px 0 0">A reserva é controlada à parte e não entra no saldo mensal do caixa.</p></div>
   </section>
+  <section id="est">
+    <div class="card"><h2>Novo item no estoque</h2>
+      <div class="grid">
+        <label class="f">Nome<input id="es-n" placeholder="Ex.: Vacina V10"></label>
+        <label class="f">Categoria<select id="es-c"><option>Vacina</option><option>Remédios</option><option>Insumos</option></select></label>
+        <label class="f">Lote<input id="es-l" placeholder="Ex.: L2045"></label>
+        <label class="f">Data de validade<input type="date" id="es-val"></label>
+        <label class="f">Data de compra<input type="date" id="es-d"></label>
+        <label class="f">Quantidade<input type="number" step="1" min="0" id="es-q"></label>
+      </div>
+      <p><button class="btn" id="es-add">Adicionar</button></p>
+    </div>
+    <div class="card"><h2>Itens em estoque</h2><div class="tw" id="es-l-list"></div>
+      <p style="font-size:12px;color:var(--mut);margin:10px 0 0">Itens ordenados pela validade mais próxima. Em “Retirar”, você informa quantas unidades saíram e o estoque é atualizado.</p></div>
+  </section>
   </div>
 </div>
 
@@ -319,7 +336,7 @@ const db = firebase.database();
 const auth = firebase.auth();
 const dbRef = db.ref('caixa_data');
 
-var S = {ent:[], sai:[], rec:[], pag:[], res:[], meta:0};
+var S = {ent:[], sai:[], rec:[], pag:[], res:[], est:[], meta:0};
 var $ = function(i){return document.getElementById(i)};
 var inicializado = false;
 var currentUserRole = 'funcionario';
@@ -428,6 +445,7 @@ function iniciarBancoDeDados() {
       S.rec = S.rec || [];
       S.pag = S.pag || [];
       S.res = S.res || [];
+      S.est = S.est || [];
       S.meta = S.meta || 0;
     }
     S.rec.forEach(function(r){if(r.got==null)r.got=r.paid>=r.n?r.v:r2(r.v/r.n*r.paid)});
@@ -466,7 +484,7 @@ $('mes').onchange=function(){M=this.value||M;render()};
 $('r-mes-filtro').onchange=function(){render()};
 $('p-mes-filtro').onchange=function(){render()};
 
-['e-d','s-d','r-d','r-p','p-d','p-p','v-d'].forEach(function(i){if($(i))$(i).value=today()});
+['e-d','s-d','r-d','r-p','p-d','p-p','v-d','es-d'].forEach(function(i){if($(i))$(i).value=today()});
 
 function mudarAba(botao, idTarget) {
   document.querySelectorAll('#nav button').forEach(function(x){x.classList.toggle('on',x===botao)});
@@ -509,11 +527,18 @@ $('v-add').onclick=function(){
   var v=val('v-v');if(!(v>0)||!$('v-d').value){toast('Informe a data e um valor.');return}
   upsert('res',{d:$('v-d').value,k:$('v-k').value,t:$('v-t').value||'—',v:v});
   $('v-t').value='';$('v-v').value='';save()};
+$('es-add').onclick=function(){
+  var n=$('es-n').value.trim(),q=parseInt($('es-q').value);
+  if(!n){toast('Informe o nome do item.');return}
+  if(!(q>=0)||isNaN(q)){toast('Informe a quantidade.');return}
+  if(!$('es-val').value||!$('es-d').value){toast('Informe a data de validade e a data de compra.');return}
+  upsert('est',{t:n,c:$('es-c').value,l:$('es-l').value.trim(),val:$('es-val').value,d:$('es-d').value,q:q});
+  $('es-n').value='';$('es-l').value='';$('es-q').value='';$('es-val').value='';save()};
 $('m-v').onchange=function(){S.meta=parseFloat(this.value)||0;save()};
 
-var ED={ent:null,sai:null,rec:null,pag:null,res:null},
-FM={ent:{d:'e-d',t:'e-t',pet:'e-pet',c:'e-c',f:'e-f',parc:'e-parc',v:'e-v'},sai:{d:'s-d',c:'s-c',t:'s-t',v:'s-v'},rec:{d:'r-d',t:'r-t',pet:'r-pet',v:'r-v',n:'r-n',c:'r-c',f:'r-f',p:'r-p'},pag:{d:'p-d',t:'p-t',v:'p-v',n:'p-n',c:'p-c',p:'p-p'},res:{d:'v-d',k:'v-k',t:'v-t',v:'v-v'}},
-BT={ent:'e-add',sai:'s-add',rec:'r-add',pag:'p-add',res:'v-add'},CB={};
+var ED={ent:null,sai:null,rec:null,pag:null,res:null,est:null},
+FM={ent:{d:'e-d',t:'e-t',pet:'e-pet',c:'e-c',f:'e-f',parc:'e-parc',v:'e-v'},sai:{d:'s-d',c:'s-c',t:'s-t',v:'s-v'},rec:{d:'r-d',t:'r-t',pet:'r-pet',v:'r-v',n:'r-n',c:'r-c',f:'r-f',p:'r-p'},pag:{d:'p-d',t:'p-t',v:'p-v',n:'p-n',c:'p-c',p:'p-p'},res:{d:'v-d',k:'v-k',t:'v-t',v:'v-v'},est:{t:'es-n',c:'es-c',l:'es-l',val:'es-val',d:'es-d',q:'es-q'}},
+BT={ent:'e-add',sai:'s-add',rec:'r-add',pag:'p-add',res:'v-add',est:'es-add'},CB={};
 
 Object.keys(BT).forEach(function(k){
   if($(BT[k])) {
@@ -523,7 +548,7 @@ Object.keys(BT).forEach(function(k){
 
 function endEdit(k){
   ED[k]=null;
-  Object.keys(FM[k]).forEach(function(f){var el=$(FM[k][f]);if(el){if(el.type==='date')el.value=today();else if(el.tagName==='SELECT')el.selectedIndex=0;else el.value=''}});
+  Object.keys(FM[k]).forEach(function(f){var el=$(FM[k][f]);if(el){if(el.id==='es-val')el.value='';else if(el.type==='date')el.value=today();else if(el.tagName==='SELECT')el.selectedIndex=0;else el.value=''}});
   if(k==='rec')$('r-n').value=1;
   if(k==='pag')$('p-n').value=1;
   if(k==='ent')atualizarVisibilidadeParc();
@@ -602,6 +627,34 @@ function doPay(id){
   save();closeM();toast('Custo de '+brl(a)+' lançado em Custos ('+fd(d)+').');
 }
 
+// --- Estoque: retirada ---
+function getEst(id){return S.est.filter(function(x){return x.id===id})[0]}
+function retirar(id){
+  var it=getEst(id);if(!it)return;
+  if(!(it.q>0)){toast('Este item está sem estoque.');return}
+  modal('<h3>Retirar do estoque – '+esc(it.t)+'</h3><p style="margin:0 0 10px;color:var(--mut);font-size:13px">'+(it.l?'Lote '+esc(it.l)+' · ':'')+'Disponível: '+it.q+'</p><div class="grid"><label class="f">Quantidade a retirar<input type="number" step="1" min="1" max="'+it.q+'" id="er-q" value="1"></label></div><div class="ac"><button class="btn g" onclick="closeM()">Cancelar</button><button class="btn" onclick="doRetirar('+id+')">Confirmar retirada</button></div>');
+}
+function doRetirar(id){
+  var it=getEst(id),a=parseInt($('er-q').value);if(!it)return;
+  if(!(a>0)){toast('Informe a quantidade a retirar.');return}
+  if(a>it.q){toast('Só há '+it.q+' em estoque.');return}
+  it.q=it.q-a;
+  save();closeM();toast('Retirada de '+a+' · restam '+it.q+' em estoque.');
+}
+
+// --- Resultado do mês: parcelas que vencem no mês selecionado ---
+function dueInMonth(r,m){
+  var rs=Math.max(rest(r),0);if(rs<=0.004)return 0;
+  if(r.paid>=r.n)return dueOf(r).slice(0,7)===m?rs:0;
+  var pv=r2(r.v/r.n),left=rs,tot=0;
+  for(var i=r.paid;i<r.n;i++){
+    var a=(i<r.n-1)?Math.min(pv,left):left;
+    if(addM(r.p,i).slice(0,7)===m)tot+=a;
+    left=r2(left-a);
+  }
+  return r2(tot);
+}
+
 function catT(list,cats){
   var tot=sum(list),all=cats.slice();
   if(sum(list.filter(function(x){return cats.indexOf(x.c)<0}))>0)all.push('Sem categoria');
@@ -631,6 +684,11 @@ function render(){
 
   S.rec.forEach(function(r){pend+=Math.max(rest(r),0)});
   S.pag.forEach(function(p){pendPag+=Math.max(rest(p),0)});
+  var recMes=0,pagMes=0;
+  S.rec.forEach(function(r){recMes+=dueInMonth(r,M)});
+  S.pag.forEach(function(p){pagMes+=dueInMonth(p,M)});
+  recMes=r2(recMes);pagMes=r2(pagMes);
+  var sobra=r2(te-tc-rp),resMes=r2(sobra+recMes-pagMes);
 
   if (currentUserRole === 'dono') {
     $('kpis').innerHTML=
@@ -642,7 +700,8 @@ function render(){
       '<div class="kpi"><span>Retirada pessoal</span><b>'+brl(rp)+'</b></div>'+
       '<div class="kpi"><span>Sobra após a retirada</span><b class="'+(te-tc-rp<0?'out':'in')+'">'+brl(te-tc-rp)+'</b></div>'+
       '<div class="kpi"><span>Ainda a receber (total)</span><b class="in">'+brl(Math.max(pend,0))+'</b></div>'+
-      '<div class="kpi"><span>Ainda a pagar (total)</span><b class="out">'+brl(Math.max(pendPag,0))+'</b></div>';
+      '<div class="kpi"><span>Ainda a pagar (total)</span><b class="out">'+brl(Math.max(pendPag,0))+'</b></div>'+
+      '<div class="kpi" style="border:1px solid var(--pri)"><span>Resultado do mês</span><b class="'+(resMes<0?'out':'in')+'">'+brl(resMes)+'</b></div>';
 
     $('porForma').innerHTML=table(['Forma','>Bruto','>Taxas','>Líquido','Participação'],
       ['Crédito','Débito','Pix','Dinheiro'].map(function(f){
@@ -666,7 +725,7 @@ function render(){
     $('e-cat').innerHTML=catT(E,ECATS);
   }
   
-  window.LAST={te:te,teBruto:teBruto,teTaxas:teTaxas,tc:tc,rp:rp,pend:pend,pendPag:pendPag,cats:['Aluguel','Energia','Água','Simples Nacional','Tributos federais','Pagamentos a prefeitura','Funcionária','Insumos','Pagamentos em geral','Retirada pessoal'],E:E,C:C};
+  window.LAST={recMes:recMes,pagMes:pagMes,resMes:resMes,te:te,teBruto:teBruto,teTaxas:teTaxas,tc:tc,rp:rp,pend:pend,pendPag:pendPag,cats:['Aluguel','Energia','Água','Simples Nacional','Tributos federais','Pagamentos a prefeitura','Funcionária','Insumos','Pagamentos em geral','Retirada pessoal'],E:E,C:C};
 
   $('e-l').innerHTML=table(['Data','Descrição / Pet','Categoria','Forma','>Valor Bruto','>Taxa / Líquido',''],E.map(function(x){
     var petText = x.pet ? '<br><small style="color:var(--mut)">Pet: '+esc(x.pet)+'</small>' : '';
@@ -746,6 +805,16 @@ function render(){
         '<td>'+(done?'':'<button class="btn s" style="background:var(--out);color:#fff" onclick="payBill('+p.id+')">Pagar</button> ')+'<button class="x" onclick="editar(\'pag\','+p.id+')" aria-label="Editar">✎</button><button class="x" onclick="del(\'pag\','+p.id+')" aria-label="Remover">×</button></td></tr>'}),
     filtroMesPag ? 'Nenhuma conta a pagar para o mês selecionado.' : 'Nenhuma conta a pagar cadastrada.');
 
+  // --- Render Aba Estoque ---
+  var hojeE=today();
+  var lim=new Date();lim.setDate(lim.getDate()+30);var lim30=iso(lim);
+  $('es-l-list').innerHTML=table(['Nome','Categoria','Lote','Validade','Compra','>Qtd.',''],
+    S.est.slice().sort(function(a,b){return a.val<b.val?-1:a.val>b.val?1:0}).map(function(x){
+      var venc=x.val&&x.val<hojeE,perto=x.val&&!venc&&x.val<=lim30,zero=!(x.q>0);
+      var vTag=venc?' <span class="tag out">vencido</span>':perto?' <span class="tag warn">vence em breve</span>':'';
+      return '<tr><td>'+esc(x.t)+'</td><td><span class="tag">'+esc(x.c||'—')+'</span></td><td>'+esc(x.l||'—')+'</td><td class="'+(venc?'out':perto?'warn':'')+'">'+fd(x.val)+vTag+'</td><td>'+fd(x.d)+'</td><td class="r'+(zero?' out':'')+'">'+(zero?'Esgotado':x.q)+'</td><td>'+(zero?'':'<button class="btn s o" onclick="retirar('+x.id+')">Retirar</button> ')+'<button class="x" onclick="editar(\'est\','+x.id+')" aria-label="Editar">✎</button><button class="x" onclick="del(\'est\','+x.id+')" aria-label="Remover">×</button></td></tr>'}),
+    'Nenhum item no estoque. Cadastre acima.');
+
   if(currentUserRole === 'dono'){
     var ap=sum(S.res.filter(function(x){return x.k==='Aporte'})),rs=sum(S.res.filter(function(x){return x.k==='Resgate'})),
         sd=ap-rs,mt=S.meta||0,pc=mt?Math.max(0,Math.min(sd/mt*100,100)):0;
@@ -788,6 +857,12 @@ $('pdf-b').onclick=function(){
     ['Resultado da clínica',brl(L.te-L.tc),1],
     ['Retirada pessoal',brl(L.rp)],
     ['Sobra após a retirada',brl(L.te-L.tc-L.rp),1]
+  ]);
+  sec('Resultado do mês',[
+    ['Sobra após a retirada',brl(L.te-L.tc-L.rp)],
+    ['A receber no mês','+ '+brl(L.recMes)],
+    ['A pagar no mês','- '+brl(L.pagMes)],
+    ['Resultado do mês',brl(L.resMes),1]
   ]);
   sec('Pendências totais',[
     ['Ainda a receber',brl(Math.max(L.pend,0))],
